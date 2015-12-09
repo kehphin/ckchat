@@ -30,6 +30,8 @@ class Server:
       'bob': 'enter'
     }
 
+    self.clientKeys = {}
+
     self.run()
 
   def run(self):
@@ -85,6 +87,21 @@ class Server:
 
       selectUserResponse = SelectUserResponseMessage(destinationPort)
       clientSocket.send(selectUserResponse.encode())
+
+  def handleNeedhamSchroeder(self, userid_a, userid_b, nonce_a):
+    session_key = ''
+    response = []
+    timestamp = self.encrypt("master", "TIME!!!")
+
+    message_b = self.encrypt(userid_b, [session_key, userid_a])
+    response = self.encrypt(userid_a, [session_key, userid_b, timestamp , nonce_a, message_b])
+
+  def encrypt(self, userid, data):
+    encrypt_key = self.clientKeys[userid]
+    return data   # TODO: message encrypting
+
+
+
 
 # Start server
 Server()

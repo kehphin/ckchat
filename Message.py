@@ -55,3 +55,9 @@ class ServerMessage(Message):
     self.messageType = "serverMessage"
     self.srcPort = srcPort
     self.message = message
+
+class SessionEstablishmentMessage(Message):
+  def __init__(self, srcPort, message):
+    self.messageType = "sessionEstablishment"
+    self.srcPort = srcPort
+    self.message = message

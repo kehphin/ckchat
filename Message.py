@@ -34,17 +34,22 @@ class SelectUserMessage(Message):
     self.username = username
 
 class SelectUserResponseMessage(Message):
-  def __init__(self, destinationPort, destinationUsername):
+  def __init__(self, destinationPort, destinationUsername, sessionKey, nonceReturned, timestamp, forwardBlock):
     self.messageType = "selectUserResponse"
     self.destinationPort = destinationPort
     self.destinationUsername = destinationUsername
+    self.sessionKey = sessionKey
+    self.nonceReturned = nonceReturned
+    self.timestamp = timestamp
+    self.forwardBlock = forwardBlock
 
 class LoginMessage(Message):
-  def __init__(self, srcPort, username, password):
+  def __init__(self, srcPort, username, password, clientPublicKey):
     self.messageType = "login"
     self.srcPort = srcPort
     self.username = username
     self.password = password
+    self.clientPublicKey = clientPublicKey
 
 class LoginResponseMessage(Message):
   def __init__(self, username, status):

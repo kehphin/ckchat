@@ -12,6 +12,9 @@ from Message import LoginMessage
 from Message import ListMessage
 from Message import SelectUserMessage
 from Message import SessionEstMessage
+from Message import EstablishPrivateMessage
+from Message import PrivateMessage
+from Message import PrivateMessageResponse
 
 
 class Client:
@@ -33,7 +36,9 @@ class Client:
     self.serverSocket.connect((self.host, self.serverPort))
     self.selectList.append(self.serverSocket)
 
+    self.username = None
     self.privateSockets = {}
+    self.currentPrivateConnection = None # (socket, port, username)
 
     self.sessionKey = ''
     self.clientKeys = {}
@@ -70,7 +75,6 @@ class Client:
     # login
     elif str.split(line)[0] == '<login>':
       loginMessage = LoginMessage(self.clientPort, str.split(line)[1], str.split(line)[2])
-      print loginMessage.encode()
       self.serverSocket.send(loginMessage.encode())
 
     # request list of online users
@@ -84,6 +88,11 @@ class Client:
       self.serverSocket.send(selectUserMessage.encode())
       # self.establishNeedhamSchroeder(self.user, destuser)
 
+    # private message enabled with someone
+    elif self.currentPrivateConnection != None:
+      privateMessage = PrivateMessage(self.clientPort, self.currentPrivateConnection['port'], line)
+      self.currentPrivateConnection['socket'].send(privateMessage.encode())
+
     # received server message
     else:
       serverMessage = ServerMessage(self.clientPort, line)
@@ -95,6 +104,7 @@ class Client:
 
     if jsonMessage['messageType'] == 'loginResponse':
       if jsonMessage['status'] == 'success':
+        self.username = jsonMessage['username']
         print 'Login succeeded. Type `<list>` to see a list of online users to message!'
       else:
         print 'Invalid username or password.'
@@ -104,21 +114,44 @@ class Client:
 
     if jsonMessage['messageType'] == 'selectUserResponse':
       if jsonMessage['destinationPort'] != '':
-        print jsonMessage['destinationPort']
-
-        # TODO
-        #sendPrivateMessage(jsonMessage['destinationPort'])
+        self.setPrivateMessageMode(jsonMessage['destinationPort'], jsonMessage['destinationUsername'])
       else:
         print 'That user is not online. Please try a different user.'
 
-    if jsonMessage['messageType'] == 'sessionEstablishment':
-      self.handleNeedhamSchroeder(message)
+    if jsonMessage['messageType'] == 'establishPrivateMessage':
+      self.currentPrivateConnection = {
+        'socket': socket.socket(socket.AF_INET, socket.SOCK_STREAM),
+        'port': jsonMessage['srcPort'],
+        'username': jsonMessage['srcUsername']
+      }
 
+      self.currentPrivateConnection['socket'].connect((self.host, jsonMessage['srcPort']))
 
-  def sendPrivateMessage(self, destinationPort):
-    privateSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    self.privateSockets[str(destinationPort)] = privateSocket
-    privateSocket.connect((self.host, destinationPort))
+    if jsonMessage['messageType'] == 'privateMessage':
+      print 'From ' + `self.currentPrivateConnection['username']` + ': ' + jsonMessage['message']
+      privateMessageResponse = PrivateMessageResponse(self.clientPort, self.currentPrivateConnection['port'], jsonMessage['message'])
+      self.currentPrivateConnection['socket'].send(privateMessageResponse.encode())
+
+    if jsonMessage['messageType'] == 'privateMessageResponse':
+      print 'To ' + `self.currentPrivateConnection['username']` + ': ' + jsonMessage['message']
+
+    # if jsonMessage['messageType'] == 'sessionEstablishment':
+    #   self.handleNeedhamSchroeder(message)
+
+  def setPrivateMessageMode(self, destinationPort, destinationUsername):
+    self.currentPrivateConnection = {
+      'socket': socket.socket(socket.AF_INET, socket.SOCK_STREAM),
+      'port': destinationPort,
+      'username': destinationUsername
+    }
+
+    self.currentPrivateConnection['socket'].connect((self.host, destinationPort))
+
+    establishPrivateMessage = EstablishPrivateMessage(self.clientPort, self.username)
+    self.currentPrivateConnection['socket'].send(establishPrivateMessage.encode())
+
+    print 'Connected to ' + destinationUsername + ' on Port: ' + `destinationPort`
+
 
   def sanitizeInput(self):
     # Some command line manipulation to get messages to display properly

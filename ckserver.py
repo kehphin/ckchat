@@ -66,13 +66,13 @@ class Server:
 
     if jsonMessage['messageType'] == 'login':
       if jsonMessage['username'] in self.users and jsonMessage['password'] == self.users[jsonMessage['username']]:
-        self.usersOnline[jsonMessage['username']] = jsonMessage['srcPort']
+        self.usersOnline[jsonMessage['username']] = (jsonMessage['srcPort'], None)
 
-        loginResponseMessage = LoginResponseMessage('success')
+        loginResponseMessage = LoginResponseMessage(jsonMessage['username'], 'success')
         clientSocket.send(loginResponseMessage.encode())
 
       else:
-        loginResponseMessage = LoginResponseMessage('fail')
+        loginResponseMessage = LoginResponseMessage(jsonMessage['username'], 'fail')
         clientSocket.send(loginResponseMessage.encode())
 
     if jsonMessage['messageType'] == 'list':
@@ -83,9 +83,9 @@ class Server:
       user = jsonMessage['username']
       destinationPort = ''
       if user in self.usersOnline:
-        destinationPort = self.usersOnline[user]
+        destinationPort = self.usersOnline[user][0]
 
-      selectUserResponse = SelectUserResponseMessage(destinationPort)
+      selectUserResponse = SelectUserResponseMessage(destinationPort, user)
       clientSocket.send(selectUserResponse.encode())
 
   def handleNeedhamSchroeder(self, userid_a, userid_b, nonce_a):

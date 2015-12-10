@@ -34,9 +34,10 @@ class SelectUserMessage(Message):
     self.username = username
 
 class SelectUserResponseMessage(Message):
-  def __init__(self, destinationPort):
+  def __init__(self, destinationPort, destinationUsername):
     self.messageType = "selectUserResponse"
     self.destinationPort = destinationPort
+    self.destinationUsername = destinationUsername
 
 class LoginMessage(Message):
   def __init__(self, srcPort, username, password):
@@ -46,8 +47,9 @@ class LoginMessage(Message):
     self.password = password
 
 class LoginResponseMessage(Message):
-  def __init__(self, status):
+  def __init__(self, username, status):
     self.messageType = "loginResponse"
+    self.username = username
     self.status = status
 
 class ServerMessage(Message):
@@ -60,4 +62,23 @@ class SessionEstablishmentMessage(Message):
   def __init__(self, srcPort, message):
     self.messageType = "sessionEstablishment"
     self.srcPort = srcPort
+
+class PrivateMessage(Message):
+  def __init__(self, srcPort, destPort, message):
+    self.messageType = "privateMessage"
+    self.srcPort = srcPort
+    self.destPort = destPort
+    self.message = message
+
+class EstablishPrivateMessage(Message):
+  def __init__(self, srcPort, srcUsername):
+    self.messageType = "establishPrivateMessage"
+    self.srcPort = srcPort
+    self.srcUsername = srcUsername
+
+class PrivateMessageResponse(Message):
+  def __init__(self, srcPort, destPort, message):
+    self.messageType = "privateMessageResponse"
+    self.srcPort = srcPort
+    self.destPort = destPort
     self.message = message

@@ -131,20 +131,19 @@ class Client:
       loginMessage = LoginMessage(self.clientPort, str.split(line)[1], str.split(line)[2], clientPublicKeyRaw)
       # self.serverSocket.send(self.encrypt("SERVER_PUBLIC_KEY", loginMessage.encode()))
       self.serverSocket.send(loginMessage.encode())
-      self.debug("login information sent to server.")
+      self.debug("login information sent to server")
 
     # request list of online users
     elif str.split(line)[0] == '<list>':
       listMessage = ListMessage(self.clientPort, self.username)
       self.serverSocket.send(listMessage.encode())
-      self.debug("list request sent to server.")
+      self.debug("list request encoded and sent to server")
 
     # select user
     elif str.split(line)[0] == '<message>':
       selectUserMessage = SelectUserMessage(str.split(line)[1])
-      self.debug("about to send selectUserMessage")
       self.serverSocket.send(selectUserMessage.encode())
-      self.debug("selectUserMessage encoded and sent")
+      self.debug("selectUserMessage encoded and sent to server")
 
     # private message enabled with someone
     elif self.currentPrivateConnection != None:
@@ -205,9 +204,7 @@ class Client:
       privateMessageResponse = PrivateMessageResponse(self.clientPort, self.currentPrivateConnection['port'], jsonMessage['message'])
       self.debug("setting currentPrivateConnection")
       clientPublicKey = "".join(self.clientPublicKey)
-      # self.currentPrivateConnection['socket'].send(privateMessageResponse.encode())
       self.currentPrivateConnection['socket'].send(self.encrypt(clientPublicKey, privateMessageResponse.encode()))
-      # self.debug(str(self.currentPrivateConnection))
 
     if jsonMessage['messageType'] == 'privateMessageResponse':
       print "YOU".rjust(10) + " >>>  " + str(jsonMessage['message'])
@@ -241,7 +238,6 @@ class Client:
   def encrypt(self, public_key_unserialized, data):
     try:
       self.debug("encrypting data...")
-      # self.debug("encryption public key is: \n" + str(public_key_unserialized))
 
       public_key = self.serialize_key(public_key_unserialized, "public")
 
@@ -280,7 +276,6 @@ class Client:
   def decrypt(self, private_key_unserialized, ciphertext):
     try:
       self.debug("decrypting data...")
-      # self.debug("decryption private key is: \n" + str(private_key_unserialized))
 
       private_key = self.serialize_key(private_key_unserialized, "private")
 
@@ -314,10 +309,9 @@ class Client:
       data = self.depad(data_padded)
 
       self.debug("decryption complete.")
-      self.debug(str(ciphertext))
-      self.debug(str(data))
 
       return data
+      
     except ValueError:
       print "Decryption error."
       self.end()

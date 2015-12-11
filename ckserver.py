@@ -37,6 +37,7 @@ class Server:
     self.usersOnline = {} # { user1:(port, pub_key) , user2:(port, pub_key) }
 
     self.users = {
+      'chris': '123'
       'kevin': '123',
       'bob': 'enter'
     }
@@ -117,7 +118,6 @@ class Server:
       loginResponseMessage = None
       if username in self.users and password == self.users[username]:
         self.usersOnline[username] = (jsonMessage['srcPort'], jsonMessage['clientPublicKey'])
-        self.debug("usersOnline " + str(self.usersOnline))
         loginResponseMessage = LoginResponseMessage(username, 'success')
       else:
         loginResponseMessage = LoginResponseMessage(username, 'fail')
@@ -145,7 +145,6 @@ class Server:
   # =============================================================================================
   def encrypt(self, public_key_unserialized, data):
     self.debug("encrypting data...")
-    self.debug("encryption public key is: \n" + str(public_key_unserialized))
 
     public_key = self.serialize_key(public_key_unserialized, "public")
 
@@ -174,14 +173,12 @@ class Server:
     # ciphertext_signed = signature + ciphertext
     
     self.debug("contents successfully encrypted.")
-    self.debug(str(ciphertext))
 
     return ciphertext
 
 
   def decrypt(self, private_key_unserialized, ciphertext):
     self.debug("decrypting data...")
-    self.debug("decryption private key is: \n" + str(private_key_unserialized))
 
     private_key = self.serialize_key(private_key_unserialized, "private")
 
@@ -215,8 +212,6 @@ class Server:
     data = self.depad(data_padded)
 
     self.debug("decryption complete.")
-    self.debug(str(ciphertext))
-    self.debug(str(data))
 
     return data
 

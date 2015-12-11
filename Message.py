@@ -19,9 +19,10 @@ class Message:
 
 
 class ListMessage(Message):
-  def __init__(self, srcPort):
+  def __init__(self, srcPort, username):
     self.messageType = "list"
     self.srcPort = srcPort
+    self.username = username
 
 class ListResponseMessage(Message):
   def __init__(self, userList):

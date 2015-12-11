@@ -63,7 +63,8 @@ class Server:
         else:
           self.debug("receiving incoming message")
           data_encrypted = s.recv(self.size)
-          data_decrypted =  self.decrypt("MY_PRIVATE_KEY", data_encrypted)
+          # data_decrypted =  self.decrypt("MY_PRIVATE_KEY", data_encrypted)
+          data_decrypted = data_encrypted
           if len(data_decrypted) > 0:
             self.handleMessageType(s, json.loads(data_decrypted))
 
@@ -75,6 +76,29 @@ class Server:
     self.serverSocket.close()
 
   # =============================================================================================
+  # Opens and reads a file
+  def file_read(self, storeType, filepath):
+    fileinput_content = None
+    with open(filepath) as f:
+      if storeType is "array":
+        fileinput_content = f.readlines()
+      elif storeType is "string":
+        fileinput_content = f.read()
+    return fileinput_content
+
+  # Serializes the public/private keys
+  def serialize_key(self, key_unserialized, key_type):
+    key_serialized = None
+    if key_type == "private":
+      key_serialized = serialization.load_pem_private_key(
+        key_unserialized, password=None, backend=default_backend()
+        )
+    elif key_type == "public":
+      key_serialized = serialization.load_pem_public_key(
+        key_unserialized, backend=default_backend()
+        )   
+    return key_serialized
+
   # Enables debug messages
   def debug(self, text):
     if self.debugMode:
@@ -82,124 +106,119 @@ class Server:
 
   # =============================================================================================
   def handleMessageType(self, clientSocket, jsonMessage):
-    if jsonMessage['messageType'] == 'serverMessage':
-      print 'From ' + `jsonMessage['srcPort']` + ': ' + jsonMessage['message']
-      clientSocket.send(json.dumps(jsonMessage))
+    # if jsonMessage['messageType'] == 'serverMessage':
+    #   print 'From ' + `jsonMessage['srcPort']` + ': ' + jsonMessage['message']
+    #   destPubKey = "".join([str(e) for e in self.usersOnline[jsonMessage['username']][1]])
+    #   clientSocket.send(self.encrypt(json.dumps(jsonMessage)))
 
     if jsonMessage['messageType'] == 'login':
-      if jsonMessage['username'] in self.users and jsonMessage['password'] == self.users[jsonMessage['username']]:
-        self.usersOnline[jsonMessage['username']] = (jsonMessage['srcPort'], jsonMessage['clientPublicKey'])
+      username = jsonMessage['username']
+      password = jsonMessage['password']
+      loginResponseMessage = None
+      if username in self.users and password == self.users[username]:
+        self.usersOnline[username] = (jsonMessage['srcPort'], jsonMessage['clientPublicKey'])
         self.debug("usersOnline " + str(self.usersOnline))
-
-        loginResponseMessage = LoginResponseMessage(jsonMessage['username'], 'success')
-        clientSocket.send(loginResponseMessage.encode())
-
+        loginResponseMessage = LoginResponseMessage(username, 'success')
       else:
-        loginResponseMessage = LoginResponseMessage(jsonMessage['username'], 'fail')
-        clientSocket.send(loginResponseMessage.encode())
+        loginResponseMessage = LoginResponseMessage(username, 'fail')
+      destPubKey = "".join([str(e) for e in self.usersOnline[username][1]])
+      clientSocket.send(self.encrypt(destPubKey, loginResponseMessage.encode()))
 
     if jsonMessage['messageType'] == 'list':
       listMessage = ListResponseMessage(self.usersOnline.keys())
-      clientSocket.send(listMessage.encode())
+      destPubKey = "".join([str(e) for e in self.usersOnline[jsonMessage['username']][1]])
+      clientSocket.send(self.encrypt(destPubKey, listMessage.encode()))
 
     if jsonMessage['messageType'] == 'selectUser':
       self.debug("selecting user")
-      user = jsonMessage['username']
-      destinationPort = ''
-      if user in self.usersOnline:
-        destinationPort = self.usersOnline[user][0]
-        self.debug("selected user " + str(user) + " " + str(destinationPort))
-
+      username = jsonMessage['username']
+      destinationPort = None
+      if username in self.usersOnline:
+        destinationPort = self.usersOnline[username][0]
+        self.debug("selected user " + str(username) + " " + str(destinationPort))
       selectUserResponse = SelectUserResponseMessage(
-        destinationPort, user, "SESSION_KEY", "NONCE", "TIMESTAMP", "ENCRYPTED_FORWARD_BLOCK")
-      clientSocket.send(self.encrypt("USERID1_PUBLIC_KEY", selectUserResponse.encode()))
+        destinationPort, username, "SESSION_KEY", "NONCE", "TIMESTAMP", "ENCRYPTED_FORWARD_BLOCK")
+      destPubKey = "".join([str(e) for e in self.usersOnline[username][1]])
+      clientSocket.send(self.encrypt(destPubKey, selectUserResponse.encode()))
 
 
   # =============================================================================================
-  def encrypt(self, public_key, data):
+  def encrypt(self, public_key_unserialized, data):
     self.debug("encrypting data...")
+    self.debug("encryption public key is: \n" + str(public_key_unserialized))
 
-    # hash_length = 16                   # length of cryptographic hash in bytes
-    # symkey = os.urandom(hash_length)   # generate a random symmetric key
-    # iv = os.urandom(hash_length)       # generate an initialization vector
+    public_key = self.serialize_key(public_key_unserialized, "public")
 
-    # # Pad the data then encrypt using 128-bit AES-CBC
-    # data_padded = self.enpad(data, hash_length)
-    # cipher = Cipher(algorithms.AES(symkey), modes.CBC(iv), backend=default_backend())
-    # encryptor = cipher.encryptor()
-    # data_encrypted = encryptor.update(data_padded) + encryptor.finalize()
+    hash_length = 16                   # length of cryptographic hash in bytes
+    symkey = os.urandom(hash_length)   # generate a random symmetric key
+    iv = os.urandom(hash_length)       # generate an initialization vector
 
-    # # Encrypt the symmetric key using the public key
-    # symkey_encrypted = public_key.encrypt(symkey + iv, padding.OAEP(
-    #   mgf=padding.MGF1(algorithm=hashes.SHA1()),
-    #   algorithm=hashes.SHA1(),
-    #   label=None)
-    # )
+    # Pad the data then encrypt using 128-bit AES-CBC
+    data_padded = self.enpad(data, hash_length)
+    cipher = Cipher(algorithms.AES(symkey), modes.CBC(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+    data_encrypted = encryptor.update(data_padded) + encryptor.finalize()
 
-    # # Append encrypted symmetric key to the encrypted data
-    # ciphertext = symkey_encrypted + data_encrypted
+    # Encrypt the symmetric key using the public key
+    symkey_encrypted = public_key.encrypt(symkey + iv, padding.OAEP(
+      mgf=padding.MGF1(algorithm=hashes.SHA1()),
+      algorithm=hashes.SHA1(),
+      label=None)
+    )
 
-    # # # Sign the data and append signature to ciphertext
-    # # signature = self.signature_sign(ciphertext, private_key)
-    # # ciphertext_signed = signature + ciphertext
+    # Append encrypted symmetric key to the encrypted data
+    ciphertext = symkey_encrypted + data_encrypted
 
+    # # Sign the data and append signature to ciphertext
+    # signature = self.signature_sign(ciphertext, private_key)
+    # ciphertext_signed = signature + ciphertext
     
     self.debug("contents successfully encrypted.")
-
-    return data
-
-    # return ciphertext
-
-
-
-    # print "\n----------------------------------------------"
-    # print "[SELF-TEST]"
-
-    # with open("cs4740_key2.pem", "rb") as key_file:
-    #     test_private_key = serialization.load_pem_private_key(key_file.read(), password=None, backend=default_backend())
-    # with open("cs4740_key1.pub", "rb") as key_file:
-    #     test_public_key = serialization.load_pem_public_key(key_file.read(), backend=default_backend())
-
-    # self.decrypt(self.fileoutput_buffer, test_private_key, test_public_key)
-
-
-  def decrypt(self, private_key, ciphertext):
-    self.debug("decrypting message...")
-
-    # # Decompose the signed ciphertext into its respective parts
-    # # signature = ciphertext_signed[:256]
-    # # ciphertext = ciphertext_signed[256:]
-    # symkey_encrypted = ciphertext[:256]
-    # message_encrypted = ciphertext[256:]
-
-    # # Validate the signature
-    # # self.signature_validate(signature, ciphertext, public_key)
-
-    # # Decrypt the symmetric key using the private key
-    # symkey_decrypted = private_key.decrypt(
-    #   symkey_encrypted, 
-    #   padding.OAEP(
-    #     mgf=padding.MGF1(algorithm=hashes.SHA1()),
-    #     algorithm=hashes.SHA1(),
-    #     label=None
-    #     )
-    #   )
-
-    # # Separate the encrypted symmetric key from the encrypted data
-    # symkey = symkey_decrypted[:16]
-    # iv = symkey_decrypted[16:]
-
-    # # Decrypt the data then remove padding
-    # cipher = Cipher(algorithms.AES(symkey), modes.CBC(iv), backend=default_backend())
-    # decryptor = cipher.decryptor()
-    # data_padded = decryptor.update(data_encrypted) + decryptor.finalize()
-    # data = self.depad(data_padded)
-
-    self.debug("decryption complete.")
+    self.debug(str(ciphertext))
 
     return ciphertext
 
-    # return data
+
+  def decrypt(self, private_key_unserialized, ciphertext):
+    self.debug("decrypting data...")
+    self.debug("decryption private key is: \n" + str(private_key_unserialized))
+
+    private_key = self.serialize_key(private_key_unserialized, "private")
+
+    # Decompose the signed ciphertext into its respective parts
+    # signature = ciphertext_signed[:256]
+    # ciphertext = ciphertext_signed[256:]
+    symkey_encrypted = ciphertext[:256]
+    data_encrypted = ciphertext[256:]
+
+    # Validate the signature
+    # self.signature_validate(signature, ciphertext, public_key)
+
+    # Decrypt the symmetric key using the private key
+    symkey_decrypted = private_key.decrypt(
+      symkey_encrypted, 
+      padding.OAEP(
+        mgf=padding.MGF1(algorithm=hashes.SHA1()),
+        algorithm=hashes.SHA1(),
+        label=None
+        )
+      )
+
+    # Separate the encrypted symmetric key from the encrypted data
+    symkey = symkey_decrypted[:16]
+    iv = symkey_decrypted[16:]
+
+    # Decrypt the data then remove padding
+    cipher = Cipher(algorithms.AES(symkey), modes.CBC(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+    data_padded = decryptor.update(data_encrypted) + decryptor.finalize()
+    data = self.depad(data_padded)
+
+    self.debug("decryption complete.")
+    self.debug(str(ciphertext))
+    self.debug(str(data))
+
+    return data
 
   # =============================================================================================
   # Adds padding to a message

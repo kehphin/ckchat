@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.ciphers import modes
 class Server:
   def __init__(self): 
     self.host = ''
-    self.port = 50010
+    self.port = 50020
 
     self.size = 1024
     self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -37,9 +37,11 @@ class Server:
     self.usersOnline = {} # { user1:(port, pub_key) , user2:(port, pub_key) }
 
     self.users = {
-      'chris': '123'
+      'chris': '123',
       'kevin': '123',
-      'bob': 'enter'
+      'bob': 'enter',
+      'a': 'a',
+      'b': 'b'
     }
 
     self.debugMode = True
@@ -49,6 +51,9 @@ class Server:
 
   def run(self):
     print "Chat server started."
+
+    self.loadServerPrivateKey()
+
     while self.running:
       inputready,outputready,exceptready = select.select(self.selectList,[],[])
       for s in inputready:
@@ -64,9 +69,8 @@ class Server:
         else:
           self.debug("receiving incoming message")
           data_encrypted = s.recv(self.size)
-          # data_decrypted =  self.decrypt("MY_PRIVATE_KEY", data_encrypted)
-          data_decrypted = data_encrypted
-          if len(data_decrypted) > 0:
+          if len(data_encrypted) > 0:
+            data_decrypted =  self.decrypt(self.withKey(self.serverPrivateKey), data_encrypted)
             self.handleMessageType(s, json.loads(data_decrypted))
 
           # client closed connection
@@ -105,6 +109,13 @@ class Server:
     if self.debugMode:
       print "[DEBUG] " + text
 
+  # Load private key of server
+  def loadServerPrivateKey(self):
+    self.serverPrivateKey = self.file_read("array", "private_ckserver.pem")
+
+  def withKey(self, unjoined):
+    return "".join([str(e) for e in unjoined])
+
   # =============================================================================================
   def handleMessageType(self, clientSocket, jsonMessage):
     # if jsonMessage['messageType'] == 'serverMessage':
@@ -121,25 +132,38 @@ class Server:
         loginResponseMessage = LoginResponseMessage(username, 'success')
       else:
         loginResponseMessage = LoginResponseMessage(username, 'fail')
-      destPubKey = "".join([str(e) for e in self.usersOnline[username][1]])
-      clientSocket.send(self.encrypt(destPubKey, loginResponseMessage.encode()))
+
+      destPubKey = self.usersOnline[username][1]
+      self.sendEncrypted(loginResponseMessage.encode(), self.withKey(destPubKey), clientSocket)
 
     if jsonMessage['messageType'] == 'list':
       listMessage = ListResponseMessage(self.usersOnline.keys())
-      destPubKey = "".join([str(e) for e in self.usersOnline[jsonMessage['username']][1]])
-      clientSocket.send(self.encrypt(destPubKey, listMessage.encode()))
+      destPubKey = self.usersOnline[jsonMessage['username']][1]
+
+      self.sendEncrypted(listMessage.encode(), self.withKey(destPubKey), clientSocket)
 
     if jsonMessage['messageType'] == 'selectUser':
       self.debug("selecting user")
-      username = jsonMessage['username']
-      destinationPort = None
-      if username in self.usersOnline:
-        destinationPort = self.usersOnline[username][0]
-        self.debug("selected user " + str(username) + " " + str(destinationPort))
-      selectUserResponse = SelectUserResponseMessage(
-        destinationPort, username, "SESSION_KEY", "NONCE", "TIMESTAMP", "ENCRYPTED_FORWARD_BLOCK")
-      destPubKey = "".join([str(e) for e in self.usersOnline[username][1]])
-      clientSocket.send(self.encrypt(destPubKey, selectUserResponse.encode()))
+      toUser = jsonMessage['toUser']
+      fromUser = jsonMessage['fromUser']
+      toUserPort = None
+
+      if toUser in self.usersOnline:
+        toUserPort = self.usersOnline[toUser][0]
+        self.debug("selected user " + str(toUser) + " " + str(toUserPort))
+      
+        toUserPubKey = self.usersOnline[toUser][1]
+        fromUserPubKey = self.usersOnline[fromUser][1]
+
+        selectUserResponse = SelectUserResponseMessage(
+          toUser, toUserPubKey, toUserPort,  "SESSION_KEY", "NONCE", "TIMESTAMP", "ENCRYPTED_FORWARD_BLOCK")
+              
+        self.sendEncrypted(selectUserResponse.encode(), self.withKey(fromUserPubKey), clientSocket)
+      
+      else:
+        selectUserResponse = SelectUserResponseMessage(toUser, "", "",  "", "", "", "")
+              
+        self.sendEncrypted(selectUserResponse.encode(), self.withKey(fromUserPubKey), clientSocket)
 
 
   # =============================================================================================
@@ -214,6 +238,9 @@ class Server:
     self.debug("decryption complete.")
 
     return data
+
+  def sendEncrypted(self, message, key, socket):
+    socket.send(self.encrypt(key, message))
 
   # =============================================================================================
   # Adds padding to a message

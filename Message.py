@@ -30,15 +30,17 @@ class ListResponseMessage(Message):
     self.userList = userList
 
 class SelectUserMessage(Message):
-  def __init__(self, username):
+  def __init__(self, fromUser, toUser):
     self.messageType = "selectUser"
-    self.username = username
+    self.fromUser = fromUser
+    self.toUser = toUser
 
 class SelectUserResponseMessage(Message):
-  def __init__(self, destinationPort, destinationUsername, sessionKey, nonceReturned, timestamp, forwardBlock):
+  def __init__(self, toUser, toUserPubKey, toUserPort, sessionKey, nonceReturned, timestamp, forwardBlock):
     self.messageType = "selectUserResponse"
-    self.destinationPort = destinationPort
-    self.destinationUsername = destinationUsername
+    self.toUser = toUser
+    self.toUserPubKey = toUserPubKey
+    self.toUserPort = toUserPort
     self.sessionKey = sessionKey
     self.nonceReturned = nonceReturned
     self.timestamp = timestamp
@@ -65,17 +67,25 @@ class ServerMessage(Message):
     self.message = message
 
 class PrivateMessage(Message):
-  def __init__(self, srcPort, destPort, message):
+  def __init__(self, srcPort, srcUsername, destPort, message):
     self.messageType = "privateMessage"
     self.srcPort = srcPort
+    self.srcUsername = srcUsername
     self.destPort = destPort
     self.message = message
 
 class EstablishPrivateMessage(Message):
-  def __init__(self, srcPort, srcUsername):
+  def __init__(self, srcPort, srcUsername, srcPublicKey):
     self.messageType = "establishPrivateMessage"
     self.srcPort = srcPort
     self.srcUsername = srcUsername
+    self.srcPublicKey = srcPublicKey
+
+class EstablishPrivateMessageResponse(Message):
+  def __init__(self, username, status):
+    self.messageType = "establishPrivateMessageResponse"
+    self.username = username
+    self.status = status
 
 class PrivateMessageResponse(Message):
   def __init__(self, srcPort, destPort, message):

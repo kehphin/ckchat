@@ -6,12 +6,14 @@ import socket
 import sys
 import random
 import json
+import pprint
 
 from Message import ServerMessage
 from Message import LoginMessage
 from Message import ListMessage
 from Message import SelectUserMessage
 from Message import EstablishPrivateMessage
+from Message import EstablishPrivateMessageResponse
 from Message import PrivateMessage
 from Message import PrivateMessageResponse
 
@@ -25,13 +27,17 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.ciphers import Cipher
 from cryptography.hazmat.primitives.ciphers import algorithms
 from cryptography.hazmat.primitives.ciphers import modes
-
+from cryptography.hazmat.primitives.serialization import Encoding
+from cryptography.hazmat.primitives.serialization import PublicFormat
+from cryptography.hazmat.primitives.serialization import PrivateFormat
+from cryptography.hazmat.primitives.serialization import NoEncryption
+from cryptography.hazmat.primitives.serialization import KeySerializationEncryption
 
 class Client:
-  def __init__(self): 
+  def __init__(self):
     self.host = 'localhost'
     self.clientPort = random.randint(60000, 65000)
-    self.serverPort = 50010
+    self.serverPort = 50020
     self.size = 1024 
     self.clientPrivateKey = None
     self.clientPublicKey = None
@@ -49,18 +55,18 @@ class Client:
 
     self.username = None
     self.privateSockets = {}
-    self.currentPrivateConnection = None # (socket, port, username, session_key)
+    self.currentConnections = {}
+    self.messageQueue = []
 
-    self.debugMode = True
-
+    self.debugMode = False
 
     self.run()
 
   def run(self):
-    # self.clientPrivateKey = self.file_read("array", "cs4740_key1.pem")
-    # self.clientPublicKey = self.file_read("array", "cs4740_key1.pub")
-    self.clientPrivateKey = self.file_read("array", "cs4740_key1.pem")
-    self.clientPublicKey = self.file_read("array", "cs4740_key1.pub")
+    print "Chat client started. \n\nPlease enter your username and password in the format: <username> <password>\n\nPress `enter` at any time to exit."
+
+    self.generateClientKeyPair()
+    self.loadServerPublicKey()
 
     while self.running:
       ready,outputready,exceptready = select.select(self.selectList,[],[])
@@ -73,15 +79,13 @@ class Client:
 
         # handle user input
         elif s == sys.stdin:
-          self.sanitizeInput()
           self.handleUserInput(sys.stdin.readline()) 
 
         # handle message from server
         else:
           self.debug("receiving incoming message.")
-          clientPrivateKey = "".join(self.clientPrivateKey)
           data_encrypted = s.recv(self.size)
-          data_decrypted =  self.decrypt(clientPrivateKey, data_encrypted)
+          data_decrypted = self.decrypt(self.withKey(self.clientPrivateKey), data_encrypted)
           self.handleMessageType(s, json.loads(data_decrypted))
 
     self.end()
@@ -101,17 +105,18 @@ class Client:
         fileinput_content = f.read()
     return fileinput_content
 
-  # Serializes the public/private keys
-  def serialize_key(self, key_unserialized, key_type):
+  # Deserializes the public/private keys
+  def deserialize_key(self, key_serialized, key_type):
     serialized_key = None
     if key_type == "private":
       serialized_key = serialization.load_pem_private_key(
-        key_unserialized, password=None, backend=default_backend()
-        )
+        key_serialized, password=None, backend=default_backend()
+      )
     elif key_type == "public":
       serialized_key = serialization.load_pem_public_key(
-        key_unserialized, backend=default_backend()
-        )   
+        key_serialized, backend=default_backend()
+      )   
+
     return serialized_key
 
   # Enables debug messages
@@ -119,43 +124,85 @@ class Client:
     if self.debugMode:
       print "[DEBUG] " + text
 
+  def generateClientKeyPair(self):
+    privateKey = rsa.generate_private_key(
+      public_exponent=65537,
+      key_size=2048,
+      backend=default_backend()
+    )
+
+    serializedPub = privateKey.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+    serializedPriv = privateKey.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption())
+    
+    self.clientPrivateKey = serializedPriv
+    self.clientPublicKey = serializedPub
+
+  # Load public key of server
+  def loadServerPublicKey(self):
+    self.serverPublicKey = self.file_read("array", "public_ckserver.pub")
+
+  def withKey(self,unjoined):
+    return "".join([str(e) for e in unjoined])
+
   # =============================================================================================
 
   def handleUserInput(self, line):
     if line == '\n':
       self.running = 0
 
-    # login
-    elif str.split(line)[0] == '<login>':
-      clientPublicKeyRaw = self.clientPublicKey
-      loginMessage = LoginMessage(self.clientPort, str.split(line)[1], str.split(line)[2], clientPublicKeyRaw)
-      # self.serverSocket.send(self.encrypt("SERVER_PUBLIC_KEY", loginMessage.encode()))
-      self.serverSocket.send(loginMessage.encode())
-      self.debug("login information sent to server")
-
     # request list of online users
-    elif str.split(line)[0] == '<list>':
-      listMessage = ListMessage(self.clientPort, self.username)
-      self.serverSocket.send(listMessage.encode())
-      self.debug("list request encoded and sent to server")
+    elif str.split(line)[0] == 'list':
+      if self.username:
+        listMessage = ListMessage(self.clientPort, self.username)
+        self.sendEncrypted(listMessage.encode(), self.withKey(self.serverPublicKey), self.serverSocket);
+        self.debug("list request encoded and sent to server")
+      else:
+        print "You are not currently logged in. \nPlease enter your username and password in the format: <username> <password>"
 
     # select user
-    elif str.split(line)[0] == '<message>':
-      selectUserMessage = SelectUserMessage(str.split(line)[1])
-      self.serverSocket.send(selectUserMessage.encode())
-      self.debug("selectUserMessage encoded and sent to server")
+    elif str.split(line)[0] == 'send':
+      if len(str.split(line)) < 3:
+        print "Invalid send format. Please try again."
+
+      if self.username:
+        lineArray = str.split(line)
+        toUser = lineArray[1]
+        toUserMessage = " ".join(lineArray[2:])
+
+        if toUser in self.currentConnections:
+          userInfo = self.currentConnections[toUser]
+          privateMessage = PrivateMessage(self.clientPort, self.username, userInfo['port'], toUserMessage)
+          self.sendEncrypted(privateMessage.encode(), self.withKey(userInfo['publicKey']), userInfo['socket']);
+
+          self.sanitizeInput()
+
+        else:
+          self.messageQueue.append((toUser, toUserMessage))
+
+          selectUserMessage = SelectUserMessage(self.username, toUser)
+          self.sendEncrypted(selectUserMessage.encode(), self.withKey(self.serverPublicKey), self.serverSocket);
+          self.sanitizeInput()
+          self.debug("selectUserMessage encoded and sent to server")
+          print "Attempting to start session with " + toUser + "."
+
+    elif len(str.split(line)) == 2:
+      loginMessage = LoginMessage(self.clientPort, str.split(line)[0], str.split(line)[1], self.clientPublicKey)
+      self.sendEncrypted(loginMessage.encode(), self.withKey(self.serverPublicKey), self.serverSocket);
+      self.debug("login information sent to server")
+
+      self.sanitizeInput()
+
+    elif self.username:
+      print "Invalid command. Please try again."
+
+    else:
+      print "You are not currently logged in. \n\nPlease enter your username and password in the format: <username> <password>"
+
 
     # private message enabled with someone
-    elif self.currentPrivateConnection != None:
-      privateMessage = PrivateMessage(self.clientPort, self.currentPrivateConnection['port'], line)
-      clientPublicKey = "".join(self.clientPublicKey)
-      # self.currentPrivateConnection['socket'].send(privateMessage.encode())
-      self.currentPrivateConnection['socket'].send(self.encrypt(clientPublicKey, privateMessage.encode()))
-
-    # received server message
-    else:
-      serverMessage = ServerMessage(self.clientPort, line)
-      self.serverSocket.send(serverMessage.encode())
+    #elif self.currentPrivateConnection != None:
+    ##  privateMessage = PrivateMessage(self.clientPort, self.currentPrivateConnection['port'], line)
+     # self.sendEncrypted(privateMessage.encode(), self.withKey(self.currentPrivateConnection['publicKey']), self.currentPrivateConnection['socket']);
 
 
   def handleMessageType(self, serverSocket, jsonMessage):
@@ -167,7 +214,7 @@ class Client:
     if jsonMessage['messageType'] == 'loginResponse':
       if jsonMessage['status'] == 'success':
         self.username = jsonMessage['username']
-        print 'Login succeeded. Type `<list>` to see a list of online users to message!'
+        print 'Login succeeded. Type `list` to see a list of online users to message!'
       else:
         print 'Invalid username or password.'
 
@@ -178,55 +225,69 @@ class Client:
          print "  * " + str(element)
 
     if jsonMessage['messageType'] == 'selectUserResponse':
+
       self.debug("received selectUserResponse")
-      self.debug("received: " + str(jsonMessage['destinationPort']))
-      self.debug("received: " + str(jsonMessage['destinationUsername']))
+      """
+      self.debug("received: " + str(jsonMessage['toUser']))
+      self.debug("received: " + str(jsonMessage['toUserPubKey']))
+      self.debug("received: " + str(jsonMessage['toUserPort']))
       self.debug("received: " + str(jsonMessage['sessionKey']))
       self.debug("received: " + str(jsonMessage['nonceReturned']))
       self.debug("received: " + str(jsonMessage['timestamp']))
       self.debug("received: " + str(jsonMessage['forwardBlock']))
+      """
 
-      if jsonMessage['destinationPort'] != '':
-        self.setPrivateMessageMode(jsonMessage['destinationPort'], jsonMessage['destinationUsername'])
+      if jsonMessage['toUserPort'] != '':
+        self.setPrivateMessageMode(jsonMessage['toUser'], jsonMessage['toUserPubKey'], jsonMessage['toUserPort'])
       else:
-        print 'That user is not online. Please try a different user.'
+        print jsonMessage['toUser'] + " is unavailable. Please try a different user."
 
     if jsonMessage['messageType'] == 'establishPrivateMessage':
-      self.currentPrivateConnection = {
+      currentPrivateConnection = {
         'socket': socket.socket(socket.AF_INET, socket.SOCK_STREAM),
         'port': jsonMessage['srcPort'],
-        'username': jsonMessage['srcUsername']
+        'publicKey': jsonMessage['srcPublicKey']
       }
-      self.currentPrivateConnection['socket'].connect((self.host, jsonMessage['srcPort']))
+
+      self.currentConnections[jsonMessage['srcUsername']] = currentPrivateConnection
+
+      currentPrivateConnection['socket'].connect((self.host, jsonMessage['srcPort']))
+
+      establishPrivateMessageResponse = EstablishPrivateMessageResponse(self.username, "success")
+      self.sendEncrypted(establishPrivateMessageResponse.encode(), self.withKey(jsonMessage['srcPublicKey']), currentPrivateConnection['socket'])
+          
+    if jsonMessage['messageType'] == 'establishPrivateMessageResponse':
+      for msg in self.messageQueue:
+        if msg[0] == jsonMessage['username']:
+          privateMessage = PrivateMessage(self.clientPort, self.username, self.currentConnections[jsonMessage['username']]['port'], msg[1])
+          self.sendEncrypted(privateMessage.encode(), self.withKey(self.currentConnections[jsonMessage['username']]['publicKey']), self.currentConnections[jsonMessage['username']]['socket'])
+
+      self.messageQueue = filter(lambda x: x[0] != jsonMessage['username'], self.messageQueue)
 
     if jsonMessage['messageType'] == 'privateMessage':
-      print str(self.currentPrivateConnection['username']).upper().rjust(10) + " >>>  " + str(jsonMessage['message'])
-      privateMessageResponse = PrivateMessageResponse(self.clientPort, self.currentPrivateConnection['port'], jsonMessage['message'])
+      fromUser = self.currentConnections[jsonMessage['srcUsername']]
+      print jsonMessage['srcUsername'] + " >>>  " + str(jsonMessage['message'])
+      privateMessageResponse = PrivateMessageResponse(self.clientPort, fromUser['port'], jsonMessage['message'])
       self.debug("setting currentPrivateConnection")
-      clientPublicKey = "".join(self.clientPublicKey)
-      self.currentPrivateConnection['socket'].send(self.encrypt(clientPublicKey, privateMessageResponse.encode()))
+      self.sendEncrypted(privateMessageResponse.encode(), self.withKey(fromUser['publicKey']), fromUser['socket'])
 
     if jsonMessage['messageType'] == 'privateMessageResponse':
-      print "YOU".rjust(10) + " >>>  " + str(jsonMessage['message'])
+      print "YOU" + " >>>  " + str(jsonMessage['message'])
 
 
-  def setPrivateMessageMode(self, destinationPort, destinationUsername):
-    self.currentPrivateConnection = {
+  def setPrivateMessageMode(self, toUser, toUserPubKey, toUserPort):
+    currentPrivateConnection = {
       'socket': socket.socket(socket.AF_INET, socket.SOCK_STREAM),
-      'port': destinationPort,
-      'username': destinationUsername
+      'port': toUserPort,
+      'publicKey': toUserPubKey
     }
 
-    self.currentPrivateConnection['socket'].connect((self.host, destinationPort))
+    self.currentConnections[toUser] = currentPrivateConnection;
 
-    establishPrivateMessage = EstablishPrivateMessage(self.clientPort, self.username)
-    # self.currentPrivateConnection['socket'].send(establishPrivateMessage.encode())
-    clientPublicKey = "".join(self.clientPublicKey)
-    self.currentPrivateConnection['socket'].send(self.encrypt(clientPublicKey, establishPrivateMessage.encode()))
+    currentPrivateConnection['socket'].connect((self.host, toUserPort))
 
-    print 'Connected to ' + destinationUsername + ' on Port: ' + `destinationPort`
-    print 'You may now begin chatting.'
-
+    establishPrivateMessage = EstablishPrivateMessage(self.clientPort, self.username, self.clientPublicKey)
+    self.sendEncrypted(establishPrivateMessage.encode(), self.withKey(toUserPubKey), currentPrivateConnection['socket'])
 
   def sanitizeInput(self):
     # Some command line manipulation to get messages to display properly
@@ -235,11 +296,11 @@ class Client:
     print(PREVIOUS_LINE + DELETE_LINE + PREVIOUS_LINE)
 
 
-  def encrypt(self, public_key_unserialized, data):
+  def encrypt(self, public_key_serialized, data):
     try:
       self.debug("encrypting data...")
 
-      public_key = self.serialize_key(public_key_unserialized, "public")
+      public_key = self.deserialize_key(public_key_serialized, "public")
 
       hash_length = 16                   # length of cryptographic hash in bytes
       symkey = os.urandom(hash_length)   # generate a random symmetric key
@@ -273,11 +334,10 @@ class Client:
       self.end()
 
 
-  def decrypt(self, private_key_unserialized, ciphertext):
+  def decrypt(self, private_key_serialized, ciphertext):
     try:
       self.debug("decrypting data...")
-
-      private_key = self.serialize_key(private_key_unserialized, "private")
+      private_key = self.deserialize_key(private_key_serialized, "private")
 
       # Decompose the signed ciphertext into its respective parts
       # signature = ciphertext_signed[:256]
@@ -316,6 +376,8 @@ class Client:
       print "Decryption error."
       self.end()
 
+  def sendEncrypted(self, message, key, socket):
+    socket.send(self.encrypt(key, message))
 
   # =============================================================================================
   # Adds padding to a data

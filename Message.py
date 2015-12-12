@@ -31,10 +31,11 @@ class ListResponseMessage(Message):
 
 # ===========================================================
 class SelectUserMessage(Message):
-  def __init__(self, usernameOrigin, usernameRequested):
+  def __init__(self, usernameOrigin, usernameRequested, nonce):
     self.messageType = "selectUser"
     self.usernameOrigin = usernameOrigin
     self.usernameRequested = usernameRequested
+    self.nonce = nonce
 
 class SelectUserResponseMessage(Message):
   def __init__(self, destinationPort, destinationUsername, sessionKey, nonceReturned, timestamp, nsblock_auth3):

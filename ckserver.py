@@ -5,6 +5,7 @@ import select
 import socket
 import sys
 import json
+import time
 
 from Message import ListResponseMessage
 from Message import LoginResponseMessage
@@ -28,7 +29,7 @@ import binascii
 class Server:
   def __init__(self): 
     self.host = ''
-    self.port = 50010
+    self.port = 50011
 
     self.size = 1024
     self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -136,6 +137,7 @@ class Server:
       self.debug("selecting user")
       usernameOrigin = jsonMessage['usernameOrigin']
       usernameRequested = jsonMessage['usernameRequested']
+      nonceReceived = jsonMessage['nonce']
       destinationPort = None
       if usernameRequested in self.usersOnline:
         destinationPort = self.usersOnline[usernameRequested][0]
@@ -147,8 +149,9 @@ class Server:
       # nsblock_auth3_encrypted_hex = str(binascii.hexlify(self.encrypt(destPubKeyRequested, nsblock_auth3)))
 
       selectUserResponse = SelectUserResponseMessage(
-        destinationPort, usernameRequested, "SESSION_KEY", "NONCE", "TIMESTAMP", nsblock_auth3)
+        destinationPort, usernameRequested, "SESSION_KEY", nonceReceived, self.genTime(), nsblock_auth3)
       destPubKeyOrigin = "".join([str(e) for e in self.usersOnline[usernameOrigin][1]])
+      self.debug(selectUserResponse.encode)
       clientSocket.send(self.encrypt(destPubKeyOrigin, selectUserResponse.encode()))
 
       # messageType = "selectUserResponse"
@@ -161,6 +164,19 @@ class Server:
       # clientSocket.send(self.encrypt(destPubKeyOrigin, selectUserResponse))
 
   # =============================================================================================
+  def genTime(self):
+    return time.time()
+
+  def validateTimestamp(self, timestampExpected, timestampReceived):
+    self.debug("validating timestamp")
+    try:
+      if abs(timestampExpected - timestampReceived) > 60:
+        print "[ERROR] Timestamp validation failed."
+        # self.end()
+    except:
+      print "[ERROR] Timestamp validation failed."
+      # self.end()
+
   def encrypt(self, public_key_unserialized, data):
     self.debug("encrypting data...")
 

@@ -6,6 +6,8 @@ import socket
 import sys
 import random
 import json
+import random
+import time
 
 from Message import ServerMessage
 from Message import LoginMessage
@@ -26,13 +28,15 @@ from cryptography.hazmat.primitives.ciphers import Cipher
 from cryptography.hazmat.primitives.ciphers import algorithms
 from cryptography.hazmat.primitives.ciphers import modes
 
+
+
 import binascii
 
 class Client:
   def __init__(self): 
     self.host = 'localhost'
     self.clientPort = random.randint(60000, 65000)
-    self.serverPort = 50010
+    self.serverPort = 50011
     self.size = 1024 
     self.clientPrivateKey = None
     self.clientPublicKey = None
@@ -51,6 +55,9 @@ class Client:
     self.username = None
     self.privateSockets = {}
     self.currentPrivateConnection = None # (socket, port, username, session_key)
+    
+    self.nonceSent = None
+    self.usernameSent = None
 
     self.debugMode = True
 
@@ -86,6 +93,7 @@ class Client:
     self.end()
 
   def end(self):
+    print "Program terminated."
     self.clientSocket.close()
     sys.exit()
 
@@ -139,7 +147,9 @@ class Client:
 
     # select user
     elif str.split(line)[0] == '<message>':
-      selectUserMessage = SelectUserMessage(self.username, str.split(line)[1])
+      self.nonceSent = self.genNonce()
+      self.usernameSent = str.split(line)[1]
+      selectUserMessage = SelectUserMessage(self.username, self.usernameSent, self.nonceSent)
       self.serverSocket.send(selectUserMessage.encode())
       self.debug("selectUserMessage encoded and sent to server")
 
@@ -192,9 +202,15 @@ class Client:
       self.debug("received: " + str(json_timestamp))
       self.debug("received: " + str(json_nsblock_auth3))
 
-      self.validateUsername("THE_USERNAME_I_REQUESTED_TO_MESSAGE", json_destinationUsername)
-      self.validateNonce("NONCE_EXPECTED", json_nonceReturned)
-      self.validateTimestamp("TIMESTAMP_EXPECTED", json_timestamp)
+
+      self.debug("current timestamp: " + str(time.time()))
+      self.debug("received timestamp: " + str(json_timestamp))
+      self.debug("current username: " + str(self.usernameSent))
+      self.debug("received username: " + str(json_destinationUsername))
+
+      self.validateUsername(self.usernameSent, json_destinationUsername)
+      self.validateNonce(self.nonceSent, json_nonceReturned)
+      self.validateTimestamp(time.time(), json_timestamp)
 
       if jsonMessage['destinationPort'] != '':
         self.setPrivateMessageMode(jsonMessage['destinationPort'], jsonMessage['destinationUsername'], jsonMessage['nsblock_auth3'])
@@ -210,11 +226,10 @@ class Client:
       # data_decrypted = self.decrypt(clientPrivateKey, data_encrypted)
       # self.debug(data_decrypted)
 
-      json_nsblock_username = jsonMessage['nsblock_auth3'] # username within the NeedhamSchroeder_Auth3 message
       json_timestamp = jsonMessage['timestamp']
       
-      self.validateUsername("MY_USERNAME", json_nsblock_username)
-      self.validateTimestamp("TIMESTAMP_EXPECTED", json_timestamp)
+      self.validateUsername(self.username, json_nsblock_username)
+      self.validateTimestamp(time.time(), json_timestamp)
 
       # store received nonce and return to clientA
 
@@ -261,14 +276,41 @@ class Client:
     print(PREVIOUS_LINE + DELETE_LINE + PREVIOUS_LINE)
 
 
+  def genNonce(self):
+    return random.randint(10000000,99999999)
+
+  def genTime(self):
+    return time.time()
+
   def validateTimestamp(self, timestampExpected, timestampReceived):
     self.debug("validating timestamp")
+    try:
+      if abs(timestampExpected - timestampReceived) > 60:
+        print "[ERROR] Timestamp validation failed."
+        # self.end()
+    except:
+      print "[ERROR] Timestamp validation failed."
+      # self.end()
 
   def validateNonce(self, nonceExpected, nonceReceived):
     self.debug("validating the nonce returned")
+    try:
+      if nonceExpected != nonceReceived:
+        print "[ERROR] Nonce validation failed."
+        # self.end()
+    except:
+      print "[ERROR] Nonce validation failed."
+      # self.end()
 
   def validateUsername(self, usernameExpected, usernameReceived):
     self.debug("validating username")
+    try:
+      if usernameExpected != usernameReceived:
+        print "[ERROR] Username validation failed."
+        # self.end()
+    except:
+      print "[ERROR] Username validation failed."
+      # self.end()
 
 
   def encrypt(self, public_key_unserialized, data):
@@ -305,7 +347,7 @@ class Client:
 
       return ciphertext
     except ValueError:
-      print "Encryption error."
+      print "[ERROR] Encryption failed."
       self.end()
 
 
@@ -349,7 +391,7 @@ class Client:
       return data
 
     except ValueError:
-      print "Decryption error."
+      print "[ERROR] Decryption failed."
       self.end()
 
 

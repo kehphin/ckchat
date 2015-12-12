@@ -17,7 +17,7 @@ class Message:
     # Returns the json format of all the instance variables of a message
     return json.dumps(self.__dict__)
 
-
+# ===========================================================
 class ListMessage(Message):
   def __init__(self, srcPort, username):
     self.messageType = "list"
@@ -29,21 +29,55 @@ class ListResponseMessage(Message):
     self.messageType = "listResponse"
     self.userList = userList
 
+# ===========================================================
 class SelectUserMessage(Message):
-  def __init__(self, username):
+  def __init__(self, usernameOrigin, usernameRequested):
     self.messageType = "selectUser"
-    self.username = username
+    self.usernameOrigin = usernameOrigin
+    self.usernameRequested = usernameRequested
 
 class SelectUserResponseMessage(Message):
-  def __init__(self, destinationPort, destinationUsername, sessionKey, nonceReturned, timestamp, forwardBlock):
+  def __init__(self, destinationPort, destinationUsername, sessionKey, nonceReturned, timestamp, nsblock_auth3):
     self.messageType = "selectUserResponse"
     self.destinationPort = destinationPort
     self.destinationUsername = destinationUsername
     self.sessionKey = sessionKey
     self.nonceReturned = nonceReturned
     self.timestamp = timestamp
-    self.forwardBlock = forwardBlock
+    self.nsblock_auth3 = nsblock_auth3
 
+class NeedhamSchroeder_Auth3(Message):
+  def __init__(self, destinationUsername, sessionKey, serverTimestamp):
+    self.messageType = "NeedhamSchroeder_Auth3"
+    self.destinationUsername = destinationUsername
+    self.sessionKey = sessionKey
+    self.serverTimestamp = serverTimestamp
+
+class EstablishPrivateMessage(Message):
+  def __init__(self, srcPort, srcUsername, timestamp, nonce, nsblock_auth3):
+    self.messageType = "establishPrivateMessage"
+    self.srcPort = srcPort
+    self.srcUsername = srcUsername
+    self.timestamp = timestamp
+    self.nonce = nonce
+    self.nsblock_auth3 = nsblock_auth3
+
+# ===========================================================
+class PrivateMessage(Message):
+  def __init__(self, srcPort, destPort, message):
+    self.messageType = "privateMessage"
+    self.srcPort = srcPort
+    self.destPort = destPort
+    self.message = message
+
+class PrivateMessageResponse(Message):
+  def __init__(self, srcPort, destPort, message):
+    self.messageType = "privateMessageResponse"
+    self.srcPort = srcPort
+    self.destPort = destPort
+    self.message = message
+
+# ===========================================================
 class LoginMessage(Message):
   def __init__(self, srcPort, username, password, clientPublicKey):
     self.messageType = "login"
@@ -58,28 +92,10 @@ class LoginResponseMessage(Message):
     self.username = username
     self.status = status
 
+# ===========================================================
 class ServerMessage(Message):
   def __init__(self, srcPort, message):
     self.messageType = "serverMessage"
     self.srcPort = srcPort
     self.message = message
 
-class PrivateMessage(Message):
-  def __init__(self, srcPort, destPort, message):
-    self.messageType = "privateMessage"
-    self.srcPort = srcPort
-    self.destPort = destPort
-    self.message = message
-
-class EstablishPrivateMessage(Message):
-  def __init__(self, srcPort, srcUsername):
-    self.messageType = "establishPrivateMessage"
-    self.srcPort = srcPort
-    self.srcUsername = srcUsername
-
-class PrivateMessageResponse(Message):
-  def __init__(self, srcPort, destPort, message):
-    self.messageType = "privateMessageResponse"
-    self.srcPort = srcPort
-    self.destPort = destPort
-    self.message = message

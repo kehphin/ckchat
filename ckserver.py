@@ -9,6 +9,7 @@ import json
 from Message import ListResponseMessage
 from Message import LoginResponseMessage
 from Message import SelectUserResponseMessage
+from Message import NeedhamSchroeder_Auth3
 
 import os
 from cryptography.hazmat.backends.interfaces import RSABackend
@@ -20,6 +21,8 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.ciphers import Cipher
 from cryptography.hazmat.primitives.ciphers import algorithms
 from cryptography.hazmat.primitives.ciphers import modes
+
+import binascii
 
 
 class Server:
@@ -37,7 +40,7 @@ class Server:
     self.usersOnline = {} # { user1:(port, pub_key) , user2:(port, pub_key) }
 
     self.users = {
-      'chris': '123'
+      'chris': '123',
       'kevin': '123',
       'bob': 'enter'
     }
@@ -131,16 +134,31 @@ class Server:
 
     if jsonMessage['messageType'] == 'selectUser':
       self.debug("selecting user")
-      username = jsonMessage['username']
+      usernameOrigin = jsonMessage['usernameOrigin']
+      usernameRequested = jsonMessage['usernameRequested']
       destinationPort = None
-      if username in self.usersOnline:
-        destinationPort = self.usersOnline[username][0]
-        self.debug("selected user " + str(username) + " " + str(destinationPort))
-      selectUserResponse = SelectUserResponseMessage(
-        destinationPort, username, "SESSION_KEY", "NONCE", "TIMESTAMP", "ENCRYPTED_FORWARD_BLOCK")
-      destPubKey = "".join([str(e) for e in self.usersOnline[username][1]])
-      clientSocket.send(self.encrypt(destPubKey, selectUserResponse.encode()))
+      if usernameRequested in self.usersOnline:
+        destinationPort = self.usersOnline[usernameRequested][0]
+        self.debug("selected user " + str(usernameRequested) + " " + str(destinationPort))
 
+      nsblock_auth3_raw = NeedhamSchroeder_Auth3("USER2_USERNAME", "SESSION_KEY_FROM_SERVER", "TIMESTAMP_FROM_SERVER")
+      nsblock_auth3 = nsblock_auth3_raw.encode()
+      # destPubKeyRequested = "".join([str(e) for e in self.usersOnline[usernameRequested][1]])
+      # nsblock_auth3_encrypted_hex = str(binascii.hexlify(self.encrypt(destPubKeyRequested, nsblock_auth3)))
+
+      selectUserResponse = SelectUserResponseMessage(
+        destinationPort, usernameRequested, "SESSION_KEY", "NONCE", "TIMESTAMP", nsblock_auth3)
+      destPubKeyOrigin = "".join([str(e) for e in self.usersOnline[usernameOrigin][1]])
+      clientSocket.send(self.encrypt(destPubKeyOrigin, selectUserResponse.encode()))
+
+      # messageType = "selectUserResponse"
+      # sessionKey = "SESSION_KEY"
+      # nonce = "NONCE"
+      # timestamp = "TIMESTAMP"
+      # # nsblock_auth3_encrypted = "ENCRYPTED_BLOCK"
+      # selectUserResponse = '{"messageType": "' + messageType + '", "destinationPort": "' + str(destinationPort) + '", "destinationUsername": "' + str(usernameRequested) + '", "sessionKey": "' + str(sessionKey) + '", "nonceReturned": "' + str(nonce) + '", "timestamp": "' + str(timestamp) + '", "nsblock_auth3": "' + nsblock_auth3_encrypted + '"}'
+      # destPubKeyOrigin = "".join([str(e) for e in self.usersOnline[usernameOrigin][1]])
+      # clientSocket.send(self.encrypt(destPubKeyOrigin, selectUserResponse))
 
   # =============================================================================================
   def encrypt(self, public_key_unserialized, data):

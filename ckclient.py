@@ -26,6 +26,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher
 from cryptography.hazmat.primitives.ciphers import algorithms
 from cryptography.hazmat.primitives.ciphers import modes
 
+import binascii
 
 class Client:
   def __init__(self): 
@@ -57,8 +58,6 @@ class Client:
     self.run()
 
   def run(self):
-    # self.clientPrivateKey = self.file_read("array", "cs4740_key1.pem")
-    # self.clientPublicKey = self.file_read("array", "cs4740_key1.pub")
     self.clientPrivateKey = self.file_read("array", "cs4740_key1.pem")
     self.clientPublicKey = self.file_read("array", "cs4740_key1.pub")
 
@@ -81,7 +80,7 @@ class Client:
           self.debug("receiving incoming message.")
           clientPrivateKey = "".join(self.clientPrivateKey)
           data_encrypted = s.recv(self.size)
-          data_decrypted =  self.decrypt(clientPrivateKey, data_encrypted)
+          data_decrypted = self.decrypt(clientPrivateKey, data_encrypted)
           self.handleMessageType(s, json.loads(data_decrypted))
 
     self.end()
@@ -120,7 +119,6 @@ class Client:
       print "[DEBUG] " + text
 
   # =============================================================================================
-
   def handleUserInput(self, line):
     if line == '\n':
       self.running = 0
@@ -141,7 +139,7 @@ class Client:
 
     # select user
     elif str.split(line)[0] == '<message>':
-      selectUserMessage = SelectUserMessage(str.split(line)[1])
+      selectUserMessage = SelectUserMessage(self.username, str.split(line)[1])
       self.serverSocket.send(selectUserMessage.encode())
       self.debug("selectUserMessage encoded and sent to server")
 
@@ -179,19 +177,48 @@ class Client:
 
     if jsonMessage['messageType'] == 'selectUserResponse':
       self.debug("received selectUserResponse")
-      self.debug("received: " + str(jsonMessage['destinationPort']))
-      self.debug("received: " + str(jsonMessage['destinationUsername']))
-      self.debug("received: " + str(jsonMessage['sessionKey']))
-      self.debug("received: " + str(jsonMessage['nonceReturned']))
-      self.debug("received: " + str(jsonMessage['timestamp']))
-      self.debug("received: " + str(jsonMessage['forwardBlock']))
+
+      json_destinationPort = jsonMessage['destinationPort']
+      json_destinationUsername = jsonMessage['destinationUsername']
+      json_sessionKey = jsonMessage['sessionKey']
+      json_nonceReturned = jsonMessage['nonceReturned']
+      json_timestamp = jsonMessage['timestamp']
+      json_nsblock_auth3 = jsonMessage['nsblock_auth3']
+
+      self.debug("received: " + str(json_destinationPort))
+      self.debug("received: " + str(json_destinationUsername))
+      self.debug("received: " + str(json_sessionKey))
+      self.debug("received: " + str(json_nonceReturned))
+      self.debug("received: " + str(json_timestamp))
+      self.debug("received: " + str(json_nsblock_auth3))
+
+      self.validateUsername("THE_USERNAME_I_REQUESTED_TO_MESSAGE", json_destinationUsername)
+      self.validateNonce("NONCE_EXPECTED", json_nonceReturned)
+      self.validateTimestamp("TIMESTAMP_EXPECTED", json_timestamp)
 
       if jsonMessage['destinationPort'] != '':
-        self.setPrivateMessageMode(jsonMessage['destinationPort'], jsonMessage['destinationUsername'])
+        self.setPrivateMessageMode(jsonMessage['destinationPort'], jsonMessage['destinationUsername'], jsonMessage['nsblock_auth3'])
       else:
         print 'That user is not online. Please try a different user.'
 
     if jsonMessage['messageType'] == 'establishPrivateMessage':
+      self.debug("Received establishPrivateMessage")
+      self.debug("Needham Schroeder Auth3 Encrypted Block (Unencrypted atm...):")
+      self.debug(str(jsonMessage['nsblock_auth3']))
+      # clientPrivateKey = "".join(self.clientPrivateKey)
+      # data_encrypted = jsonMessage['nsblock_auth3']
+      # data_decrypted = self.decrypt(clientPrivateKey, data_encrypted)
+      # self.debug(data_decrypted)
+
+      json_nsblock_username = jsonMessage['nsblock_auth3'] # username within the NeedhamSchroeder_Auth3 message
+      json_timestamp = jsonMessage['timestamp']
+      
+      self.validateUsername("MY_USERNAME", json_nsblock_username)
+      self.validateTimestamp("TIMESTAMP_EXPECTED", json_timestamp)
+
+      # store received nonce and return to clientA
+
+
       self.currentPrivateConnection = {
         'socket': socket.socket(socket.AF_INET, socket.SOCK_STREAM),
         'port': jsonMessage['srcPort'],
@@ -210,7 +237,7 @@ class Client:
       print "YOU".rjust(10) + " >>>  " + str(jsonMessage['message'])
 
 
-  def setPrivateMessageMode(self, destinationPort, destinationUsername):
+  def setPrivateMessageMode(self, destinationPort, destinationUsername, nsblock_auth3):
     self.currentPrivateConnection = {
       'socket': socket.socket(socket.AF_INET, socket.SOCK_STREAM),
       'port': destinationPort,
@@ -219,8 +246,7 @@ class Client:
 
     self.currentPrivateConnection['socket'].connect((self.host, destinationPort))
 
-    establishPrivateMessage = EstablishPrivateMessage(self.clientPort, self.username)
-    # self.currentPrivateConnection['socket'].send(establishPrivateMessage.encode())
+    establishPrivateMessage = EstablishPrivateMessage(self.clientPort, self.username, "CLIENT_TIMESTAMP", "NEW_NONCE", nsblock_auth3)
     clientPublicKey = "".join(self.clientPublicKey)
     self.currentPrivateConnection['socket'].send(self.encrypt(clientPublicKey, establishPrivateMessage.encode()))
 
@@ -233,6 +259,16 @@ class Client:
     PREVIOUS_LINE = '\x1b[1A'
     DELETE_LINE = '\x1b[2K'
     print(PREVIOUS_LINE + DELETE_LINE + PREVIOUS_LINE)
+
+
+  def validateTimestamp(self, timestampExpected, timestampReceived):
+    self.debug("validating timestamp")
+
+  def validateNonce(self, nonceExpected, nonceReceived):
+    self.debug("validating the nonce returned")
+
+  def validateUsername(self, usernameExpected, usernameReceived):
+    self.debug("validating username")
 
 
   def encrypt(self, public_key_unserialized, data):
@@ -311,7 +347,7 @@ class Client:
       self.debug("decryption complete.")
 
       return data
-      
+
     except ValueError:
       print "Decryption error."
       self.end()

@@ -1,15 +1,16 @@
-To run server: `python ckserver.py`
+README
 
-To run client: `python ckclient.py`
+To run server:
+python ckserver.py
 
-_Actions:_
+To run client(s):
+python ckclient.py
 
-- Type anything to broadcast to server
-- *\<login\> username password* : Login as a user
-- *\<list\>* : list the users online
-- *\<message\> user* : private message a particular user.
+Login as a user:
+<username> <password>
 
-_Username/Passwords:_
+List users online:
+`list`
 
-- 'kevin', '123'
-- 'bob', 'enter'
+Select a user to message:
+`send` <user> <message>

@@ -1,14 +1,5 @@
 #!/usr/bin/env python
 
-""" 
-Yang Yang
-CS4740
-PS1: Sockets Communication
-
-Message classes for chat implmentation. GREETING is sent from client to server
-in the initial communication. TEXT is a message sent from client to server.
-INCOMING is a message sent from the server to all connected clients.
-""" 
 
 import json
 
@@ -16,7 +7,6 @@ class Message:
   def encode(self):
     # Returns the json format of all the instance variables of a message
     return json.dumps(self.__dict__)
-
 
 class ListMessage(Message):
   def __init__(self, srcPort, username):
@@ -30,13 +20,14 @@ class ListResponseMessage(Message):
     self.userList = userList
 
 class SelectUserMessage(Message):
-  def __init__(self, fromUser, toUser):
+  def __init__(self, fromUser, toUser, nonce):
     self.messageType = "selectUser"
     self.fromUser = fromUser
     self.toUser = toUser
+    self.nonce = nonce
 
 class SelectUserResponseMessage(Message):
-  def __init__(self, toUser, toUserPubKey, toUserPort, sessionKey, nonceReturned, timestamp, forwardBlock):
+  def __init__(self, toUser, toUserPubKey="", toUserPort="", sessionKey="", nonceReturned="", timestamp="", forwardBlock=""):
     self.messageType = "selectUserResponse"
     self.toUser = toUser
     self.toUserPubKey = toUserPubKey
@@ -45,6 +36,21 @@ class SelectUserResponseMessage(Message):
     self.nonceReturned = nonceReturned
     self.timestamp = timestamp
     self.forwardBlock = forwardBlock
+
+    #NA, KA, TA }KC
+class LoginAuth(Message):
+  def __init__(self, srcPort, nonce, timestamp, clientPublicKey):
+    self.messageType = "loginAuth"
+    self.srcPort = srcPort
+    self.nonce = nonce
+    self.timestamp = timestamp
+    self.clientPublicKey = clientPublicKey
+
+class LoginAuthResponse(Message):
+  def __init__(self, nonce, timestamp):
+    self.messageType = "loginAuthResponse"
+    self.nonce = nonce
+    self.timestamp = timestamp
 
 class LoginMessage(Message):
   def __init__(self, srcPort, username, password, clientPublicKey):
@@ -60,12 +66,6 @@ class LoginResponseMessage(Message):
     self.username = username
     self.status = status
 
-class ServerMessage(Message):
-  def __init__(self, srcPort, message):
-    self.messageType = "serverMessage"
-    self.srcPort = srcPort
-    self.message = message
-
 class PrivateMessage(Message):
   def __init__(self, srcPort, srcUsername, destPort, message):
     self.messageType = "privateMessage"
@@ -74,18 +74,26 @@ class PrivateMessage(Message):
     self.destPort = destPort
     self.message = message
 
+class PrivateEncryptedSubmessage(Message):
+  def __init__(self, message, username):
+    self.messageType = "privateEncryptedSubmessage"
+    self.message = message
+    self.username = username
+
 class EstablishPrivateMessage(Message):
-  def __init__(self, srcPort, srcUsername, srcPublicKey):
+  def __init__(self, srcPort, srcUsername, srcPublicKey, forwardBlock, nonce):
     self.messageType = "establishPrivateMessage"
     self.srcPort = srcPort
     self.srcUsername = srcUsername
     self.srcPublicKey = srcPublicKey
+    self.forwardBlock = forwardBlock
+    self.nonce = nonce
 
 class EstablishPrivateMessageResponse(Message):
-  def __init__(self, username, status):
+  def __init__(self, username, nonce):
     self.messageType = "establishPrivateMessageResponse"
     self.username = username
-    self.status = status
+    self.nonce = nonce
 
 class PrivateMessageResponse(Message):
   def __init__(self, srcPort, destPort, message):
@@ -93,3 +101,15 @@ class PrivateMessageResponse(Message):
     self.srcPort = srcPort
     self.destPort = destPort
     self.message = message
+
+class LogoutMessage(Message):
+  def __init__(self, username):
+    self.messageType = "logoutMessage"
+    self.username = username
+
+class NeedhamSchroeder_Auth3(Message):
+  def __init__(self, destinationUsername, sessionKey, serverTimestamp):
+    self.messageType = "NeedhamSchroeder_Auth3"
+    self.destinationUsername = destinationUsername
+    self.sessionKey = sessionKey
+    self.serverTimestamp = serverTimestamp

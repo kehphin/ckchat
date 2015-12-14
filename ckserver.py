@@ -5,12 +5,17 @@ import select
 import socket
 import sys
 import json
+import time
 
+from Message import LoginAuthResponse
 from Message import ListResponseMessage
 from Message import LoginResponseMessage
 from Message import SelectUserResponseMessage
+from Message import NeedhamSchroeder_Auth3
 
 import os
+import base64
+import binascii
 from cryptography.hazmat.backends.interfaces import RSABackend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
@@ -25,9 +30,9 @@ from cryptography.hazmat.primitives.ciphers import modes
 class Server:
   def __init__(self): 
     self.host = ''
-    self.port = 50020
+    self.port = 50025
 
-    self.size = 1024
+    self.size = 10000
     self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self.serverSocket.bind((self.host, self.port))
     self.serverSocket.listen(5)
@@ -44,7 +49,7 @@ class Server:
       'b': 'b'
     }
 
-    self.debugMode = True
+    self.debugMode = False
 
     self.run()
 
@@ -74,10 +79,89 @@ class Server:
             self.handleMessageType(s, json.loads(data_decrypted))
 
           # client closed connection
-          else:
-            s.close()
-            self.selectList.remove(s)
+          #else:
+            #s.close()
+            #self.selectList.remove(s)
 
+    self.end()
+    
+
+  # =============================================================================================
+
+  def handleMessageType(self, clientSocket, jsonMessage):
+    if jsonMessage['messageType'] == 'loginAuth':
+      self.validateTimestamp(time.time(), jsonMessage['timestamp'])
+      loginAuthResponse = LoginAuthResponse(jsonMessage['nonce'], self.genTime())
+
+      tempSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      tempSocket.connect((self.host, jsonMessage['srcPort']))
+      
+      self.sendEncrypted(loginAuthResponse.encode(), self.withKey(jsonMessage['clientPublicKey']), tempSocket)
+      tempSocket.close()
+
+    if jsonMessage['messageType'] == 'login':
+      username = jsonMessage['username']
+      password = jsonMessage['password']
+      loginResponseMessage = None
+      if username in self.users and password == self.users[username]:
+        self.usersOnline[username] = (jsonMessage['srcPort'], jsonMessage['clientPublicKey'])
+        loginResponseMessage = LoginResponseMessage(username, 'success')
+
+        destPubKey = self.usersOnline[username][1]
+        self.sendEncrypted(loginResponseMessage.encode(), self.withKey(destPubKey), clientSocket)
+
+      else:
+        loginResponseMessage = LoginResponseMessage(username, 'fail')
+
+        self.sendEncrypted(loginResponseMessage.encode(), self.withKey(jsonMessage['clientPublicKey']), clientSocket)
+
+    if jsonMessage['messageType'] == 'list':
+      listMessage = ListResponseMessage(self.usersOnline.keys())
+      destPubKey = self.usersOnline[jsonMessage['username']][1]
+
+      self.sendEncrypted(listMessage.encode(), self.withKey(destPubKey), clientSocket)
+
+    if jsonMessage['messageType'] == 'selectUser':
+      self.debug("selecting user")
+      toUser = jsonMessage['toUser']
+      fromUser = jsonMessage['fromUser']
+      nonce = jsonMessage['nonce']
+      toUserPort = None
+
+      if toUser in self.usersOnline:
+        toUserPort = self.usersOnline[toUser][0]
+        self.debug("selected user " + str(toUser) + " " + str(toUserPort))
+      
+        toUserPubKey = self.usersOnline[toUser][1]
+        fromUserPubKey = self.usersOnline[fromUser][1]
+        sessionKey = binascii.b2a_base64(self.genSessionKey())
+
+        nsblock_auth3_raw = NeedhamSchroeder_Auth3(toUser, sessionKey, self.genTime())
+        nsblock_auth3 = nsblock_auth3_raw.encode()
+        nsblock_auth3_enc = binascii.b2a_base64(self.encrypt(self.withKey(toUserPubKey), nsblock_auth3))
+
+        selectUserResponse = SelectUserResponseMessage(
+          toUser, toUserPubKey, toUserPort, sessionKey, nonce, self.genTime(), nsblock_auth3_enc)
+
+        self.sendEncrypted(selectUserResponse.encode(), self.withKey(fromUserPubKey), clientSocket)
+      
+      else:
+        fromUserPubKey = self.usersOnline[fromUser][1]
+        selectUserResponse = SelectUserResponseMessage(toUser)
+              
+        self.sendEncrypted(selectUserResponse.encode(), self.withKey(fromUserPubKey), clientSocket)
+
+    if jsonMessage['messageType'] == 'logoutMessage':
+      del self.usersOnline[jsonMessage['username']]
+      clientSocket.close()
+      self.selectList.remove(clientSocket)
+
+  def end(self):
+    print "Quitting server."
+    for sock in self.selectList:
+      sock.close()
+
+    self.selectList = []
     self.serverSocket.close()
 
   # =============================================================================================
@@ -115,55 +199,6 @@ class Server:
 
   def withKey(self, unjoined):
     return "".join([str(e) for e in unjoined])
-
-  # =============================================================================================
-  def handleMessageType(self, clientSocket, jsonMessage):
-    # if jsonMessage['messageType'] == 'serverMessage':
-    #   print 'From ' + `jsonMessage['srcPort']` + ': ' + jsonMessage['message']
-    #   destPubKey = "".join([str(e) for e in self.usersOnline[jsonMessage['username']][1]])
-    #   clientSocket.send(self.encrypt(json.dumps(jsonMessage)))
-
-    if jsonMessage['messageType'] == 'login':
-      username = jsonMessage['username']
-      password = jsonMessage['password']
-      loginResponseMessage = None
-      if username in self.users and password == self.users[username]:
-        self.usersOnline[username] = (jsonMessage['srcPort'], jsonMessage['clientPublicKey'])
-        loginResponseMessage = LoginResponseMessage(username, 'success')
-      else:
-        loginResponseMessage = LoginResponseMessage(username, 'fail')
-
-      destPubKey = self.usersOnline[username][1]
-      self.sendEncrypted(loginResponseMessage.encode(), self.withKey(destPubKey), clientSocket)
-
-    if jsonMessage['messageType'] == 'list':
-      listMessage = ListResponseMessage(self.usersOnline.keys())
-      destPubKey = self.usersOnline[jsonMessage['username']][1]
-
-      self.sendEncrypted(listMessage.encode(), self.withKey(destPubKey), clientSocket)
-
-    if jsonMessage['messageType'] == 'selectUser':
-      self.debug("selecting user")
-      toUser = jsonMessage['toUser']
-      fromUser = jsonMessage['fromUser']
-      toUserPort = None
-
-      if toUser in self.usersOnline:
-        toUserPort = self.usersOnline[toUser][0]
-        self.debug("selected user " + str(toUser) + " " + str(toUserPort))
-      
-        toUserPubKey = self.usersOnline[toUser][1]
-        fromUserPubKey = self.usersOnline[fromUser][1]
-
-        selectUserResponse = SelectUserResponseMessage(
-          toUser, toUserPubKey, toUserPort,  "SESSION_KEY", "NONCE", "TIMESTAMP", "ENCRYPTED_FORWARD_BLOCK")
-              
-        self.sendEncrypted(selectUserResponse.encode(), self.withKey(fromUserPubKey), clientSocket)
-      
-      else:
-        selectUserResponse = SelectUserResponseMessage(toUser, "", "",  "", "", "", "")
-              
-        self.sendEncrypted(selectUserResponse.encode(), self.withKey(fromUserPubKey), clientSocket)
 
 
   # =============================================================================================
@@ -254,7 +289,22 @@ class Server:
       univalue = ord(message[-1])
       return message[0:-univalue]
 
+  def genTime(self):
+    return time.time()
 
+  def genSessionKey(self):
+    symmKey = os.urandom(16)
+    iv = os.urandom(16)
+    return symmKey + iv   # generate a random symmetric key
+
+  def validateTimestamp(self, timestampExpected, timestampReceived):
+    self.debug("validating timestamp")
+    try:
+      if abs(timestampExpected - timestampReceived) > 60:
+        print "[ERROR] Timestamp validation failed."
+        # self.end()
+    except:
+      print "[ERROR] Timestamp validation failed."
 
 # Start server
 Server() 

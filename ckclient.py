@@ -138,7 +138,14 @@ class Client:
 
     # login
     elif len(str.split(line)) == 2:
-      self.messageQueue.append((str.split(line)[0], str.split(line)[1]))
+      # ****************************************************************************************
+      usernameInput = str.split(line)[0]
+      passwordInput = str.split(line)[1]
+      loginMessage = (usernameInput, passwordInput)
+
+
+      # ****************************************************************************************
+      self.messageQueue.append(loginMessage)
       self.loginAuthNonce = self.genNonce()
       loginAuthMessage = LoginAuth(self.clientPort, self.loginAuthNonce, self.genTime(), self.clientPublicKey)
       #loginMessage = LoginMessage(self.clientPort, str.split(line)[0], str.split(line)[1], self.clientPublicKey)
@@ -521,6 +528,6 @@ class Client:
       print "[ERROR] Username validation failed."
       # self.end()
 
-
 # Start a Client instance
 Client()
+

@@ -26,11 +26,15 @@ from cryptography.hazmat.primitives.ciphers import Cipher
 from cryptography.hazmat.primitives.ciphers import algorithms
 from cryptography.hazmat.primitives.ciphers import modes
 
+import ast
+import hashlib
+
 
 class Server:
   def __init__(self): 
     self.host = ''
     self.port = 50025
+    self.database_path = "database"
 
     self.size = 10000
     self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -41,13 +45,7 @@ class Server:
 
     self.usersOnline = {} # { user1:(port, pub_key) , user2:(port, pub_key) }
 
-    self.users = {
-      'chris': '123',
-      'kevin': '123',
-      'bob': 'enter',
-      'a': 'a',
-      'b': 'b'
-    }
+    self.password_db = {}
 
     self.debugMode = False
 
@@ -55,7 +53,10 @@ class Server:
 
 
   def run(self):
+
     print "Chat server started."
+
+    self.password_db = ast.literal_eval(self.file_read("string", self.database_path))
 
     self.loadServerPrivateKey()
 
@@ -103,7 +104,8 @@ class Server:
       username = jsonMessage['username']
       password = jsonMessage['password']
       loginResponseMessage = None
-      if username in self.users and password == self.users[username]:
+      # if username in self.password_db and password == self.users[username]:
+      if username in self.password_db and self.password_validate(username, password):
         self.usersOnline[username] = (jsonMessage['srcPort'], jsonMessage['clientPublicKey'])
         loginResponseMessage = LoginResponseMessage(username, 'success')
 
@@ -167,6 +169,7 @@ class Server:
   # =============================================================================================
   # Opens and reads a file
   def file_read(self, storeType, filepath):
+    self.debug("reading from input file...")
     fileinput_content = None
     with open(filepath) as f:
       if storeType is "array":
@@ -306,5 +309,15 @@ class Server:
     except:
       print "[ERROR] Timestamp validation failed."
 
+    # Validate a password
+
+  def password_validate(self, username, password_client):
+    self.debug("validating password...")
+    salt_retrieved = self.password_db[username][0]
+    password_retrieved = self.password_db[username][1]
+    password_client_hashed = hashlib.sha512(password_client + salt_retrieved).hexdigest()
+    return password_client_hashed == password_retrieved
+
 # Start server
-Server() 
+Server()
+

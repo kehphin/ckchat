@@ -1,4 +1,7 @@
-README
+CS4740/6740 Final Project README
+Christophe Leung
+Kevin Yang
+
 
 You must run the server program first before running the client program.
 The server's knows its own private key.  It's public key is known to everyone.

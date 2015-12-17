@@ -64,6 +64,7 @@ class Client:
 
     self.run()
 
+  # runs the program
   def run(self):
     print "Chat client started. \n\nPlease enter your username and password in the format: <username> <password>\n\nPress `enter` at any time to exit."
 
@@ -94,7 +95,7 @@ class Client:
     self.end()
 
   # =============================================================================================
-
+  # handles the user's input
   def handleUserInput(self, line):
     if line == '\n':
       self.running = 0
@@ -138,18 +139,12 @@ class Client:
 
     # login
     elif len(str.split(line)) == 2:
-      # ****************************************************************************************
       usernameInput = str.split(line)[0]
       passwordInput = str.split(line)[1]
       loginMessage = (usernameInput, passwordInput)
-
-
-      # ****************************************************************************************
       self.messageQueue.append(loginMessage)
       self.loginAuthNonce = self.genNonce()
       loginAuthMessage = LoginAuth(self.clientPort, self.loginAuthNonce, self.genTime(), self.clientPublicKey)
-      #loginMessage = LoginMessage(self.clientPort, str.split(line)[0], str.split(line)[1], self.clientPublicKey)
-      #NA, KA, TA }KC
       self.sendEncrypted(loginAuthMessage.encode(), self.withKey(self.serverPublicKey), self.serverSocket)
       self.debug("login information sent to server")
 
@@ -161,6 +156,7 @@ class Client:
     else:
       print "You are not currently logged in. \n\nPlease enter your username and password in the format: <username> <password>"
 
+  # handles received messages
   def handleMessageType(self, serverSocket, jsonMessage):
     # TODO: ADD TRY-CATCH TO HANDLE: ValueError: No JSON object could be decoded
 
@@ -174,11 +170,16 @@ class Client:
       self.sendEncrypted(loginMessage.encode(), self.withKey(self.serverPublicKey), self.serverSocket)
 
     elif jsonMessage['messageType'] == 'loginResponse':
+      self.debug("received login response")
       if jsonMessage['status'] == 'success':
         self.username = jsonMessage['username']
         print 'Login succeeded. Type `list` to see a list of online users to message!'
-      else:
+      elif jsonMessage['status'] == 'alreadyLoggedIn':
+        print 'You are already logged in in another session. \nPlease logout the other session to start a new session.'
+      elif jsonMessage['status'] == 'fail':
         print 'Invalid username or password.'
+      else:
+        print 'Invalid command'
 
     elif jsonMessage['messageType'] == 'listResponse':
       print "Users currently online:"
@@ -265,7 +266,7 @@ class Client:
       elif data_decrypted['messageType'] == 'privateMessageResponse':
         print "YOU" + " >>>  " + str(data_decrypted['message'])
 
-
+  # terminates the program
   def end(self):
     logoutMessage = LogoutMessage(self.username)
     # disconnect from server
@@ -310,6 +311,7 @@ class Client:
     if self.debugMode:
       print "[DEBUG] " + text
 
+  # generates a client key pair
   def generateClientKeyPair(self):
     privateKey = rsa.generate_private_key(
       public_exponent=65537,
@@ -327,9 +329,11 @@ class Client:
   def loadServerPublicKey(self):
     self.serverPublicKey = self.file_read("array", "public_ckserver.pub")
 
+  # generic function for key joining
   def withKey(self,unjoined):
     return "".join([str(e) for e in unjoined])
 
+  # session initialization
   def setPrivateMessageMode(self, toUser, toUserPubKey, sessionKey, toUserPort, nsBlock):
     currentPrivateConnection = {
       'socket': socket.socket(socket.AF_INET, socket.SOCK_STREAM),
@@ -347,13 +351,14 @@ class Client:
     establishPrivateMessage = EstablishPrivateMessage(self.clientPort, self.username, self.clientPublicKey, nsBlock, self.privateMessageEstablishmentNonce)
     self.sendEncrypted(establishPrivateMessage.encode(), self.withKey(toUserPubKey), currentPrivateConnection['socket'])
 
+  # sanitizes the user's input
   def sanitizeInput(self):
     # Some command line manipulation to get messages to display properly
     PREVIOUS_LINE = '\x1b[1A'
     DELETE_LINE = '\x1b[2K'
     print(PREVIOUS_LINE + DELETE_LINE + PREVIOUS_LINE)
 
-
+  # encrypts given data with the asymmetric key
   def encrypt(self, public_key_serialized, data):
     try:
       self.debug("encrypting data...")
@@ -391,7 +396,7 @@ class Client:
       print "Encryption error."
       self.end()
 
-
+  # decrypts given data with the asymmetric key
   def decrypt(self, private_key_serialized, ciphertext):
     try:
       self.debug("decrypting data...")
@@ -434,6 +439,7 @@ class Client:
       print "Decryption error."
       self.end()
 
+  # encrypts with the symmetric key
   def encryptSymm(self, message, key):
     symkey = key[:16]
     iv = key[16:]
@@ -445,6 +451,7 @@ class Client:
 
     return encrypted_message
 
+  # decrypts with the symmetric key
   def decryptSymm(self, message, key):
     message = binascii.a2b_base64(message)
     key = binascii.a2b_base64(key)
@@ -460,6 +467,7 @@ class Client:
 
     return data
 
+  # decrypts a private message
   def decryptPrivateMessage(self, message):
     user = message['username']
     sessionKey = self.currentConnections[user]['sessionKey']
@@ -468,6 +476,7 @@ class Client:
   
     return decryptedMessage
     
+  # helper function to send encrypted messages
   def sendEncrypted(self, message, key, socket):
     socket.send(self.encrypt(key, message))
 
@@ -492,42 +501,46 @@ class Client:
     univalue = ord(data[-1])
     return data[0:-univalue]
 
+  # generates a nonce
   def genNonce(self):
     return random.randint(10000000, 99999999)
 
+  # generates a timestamp
   def genTime(self):
     return time.time()
 
+  # validates a timestamp (default set to 60 seconds of validity)
   def validateTimestamp(self, timestampExpected, timestampReceived):
     self.debug("validating timestamp")
     try:
       if abs(timestampExpected - timestampReceived) > 60:
         print "[ERROR] Timestamp validation failed."
-        # self.end()
+        self.end()
     except:
       print "[ERROR] Timestamp validation failed."
-      # self.end()
+      self.end()
 
+  # validates a nonce
   def validateNonce(self, nonceExpected, nonceReceived):
     self.debug("validating the nonce returned")
     try:
       if nonceExpected != nonceReceived:
         print "[ERROR] Nonce validation failed."
-        # self.end()
+        self.end()
     except:
       print "[ERROR] Nonce validation failed."
-      # self.end()
+      self.end()
 
+  # validates a username
   def validateUsername(self, usernameExpected, usernameReceived):
     self.debug("validating username")
     try:
       if usernameExpected != usernameReceived:
         print "[ERROR] Username validation failed."
-        # self.end()
+        self.end()
     except:
       print "[ERROR] Username validation failed."
-      # self.end()
+      self.end()
 
 # Start a Client instance
 Client()
-

@@ -52,6 +52,7 @@ class Server:
     self.run()
 
 
+  # runs the program
   def run(self):
 
     print "Chat server started."
@@ -88,7 +89,7 @@ class Server:
     
 
   # =============================================================================================
-
+  # handle received server messages
   def handleMessageType(self, clientSocket, jsonMessage):
     if jsonMessage['messageType'] == 'loginAuth':
       self.validateTimestamp(time.time(), jsonMessage['timestamp'])
@@ -104,17 +105,17 @@ class Server:
       username = jsonMessage['username']
       password = jsonMessage['password']
       loginResponseMessage = None
-      # if username in self.password_db and password == self.users[username]:
       if username in self.password_db and self.password_validate(username, password):
-        self.usersOnline[username] = (jsonMessage['srcPort'], jsonMessage['clientPublicKey'])
-        loginResponseMessage = LoginResponseMessage(username, 'success')
-
-        destPubKey = self.usersOnline[username][1]
-        self.sendEncrypted(loginResponseMessage.encode(), self.withKey(destPubKey), clientSocket)
-
+        if username in self.usersOnline:
+          loginResponseMessage = LoginResponseMessage(username, 'alreadyLoggedIn')
+          self.sendEncrypted(loginResponseMessage.encode(), self.withKey(jsonMessage['clientPublicKey']), clientSocket)
+        else:
+          self.usersOnline[username] = (jsonMessage['srcPort'], jsonMessage['clientPublicKey'])
+          loginResponseMessage = LoginResponseMessage(username, 'success')
+          destPubKey = self.usersOnline[username][1]
+          self.sendEncrypted(loginResponseMessage.encode(), self.withKey(destPubKey), clientSocket)
       else:
         loginResponseMessage = LoginResponseMessage(username, 'fail')
-
         self.sendEncrypted(loginResponseMessage.encode(), self.withKey(jsonMessage['clientPublicKey']), clientSocket)
 
     if jsonMessage['messageType'] == 'list':
@@ -158,6 +159,7 @@ class Server:
       clientSocket.close()
       self.selectList.remove(clientSocket)
 
+  # ends the program
   def end(self):
     print "Quitting server."
     for sock in self.selectList:
@@ -205,6 +207,7 @@ class Server:
 
 
   # =============================================================================================
+  # encrypts given data with the asymmetric key
   def encrypt(self, public_key_unserialized, data):
     self.debug("encrypting data...")
 
@@ -238,7 +241,7 @@ class Server:
 
     return ciphertext
 
-
+  # decrypts given data with the asymmetric key
   def decrypt(self, private_key_unserialized, ciphertext):
     self.debug("decrypting data...")
 
@@ -277,6 +280,7 @@ class Server:
 
     return data
 
+  # helper function to send encrypted messages
   def sendEncrypted(self, message, key, socket):
     socket.send(self.encrypt(key, message))
 
@@ -292,14 +296,17 @@ class Server:
       univalue = ord(message[-1])
       return message[0:-univalue]
 
+  # generates a timestamp
   def genTime(self):
     return time.time()
 
+  # generates a session key
   def genSessionKey(self):
     symmKey = os.urandom(16)
     iv = os.urandom(16)
     return symmKey + iv   # generate a random symmetric key
 
+  # validates a timestamp (default set to 60 seconds of validity)
   def validateTimestamp(self, timestampExpected, timestampReceived):
     self.debug("validating timestamp")
     try:
@@ -309,8 +316,7 @@ class Server:
     except:
       print "[ERROR] Timestamp validation failed."
 
-    # Validate a password
-
+  # validates a password
   def password_validate(self, username, password_client):
     self.debug("validating password...")
     salt_retrieved = self.password_db[username][0]
@@ -320,4 +326,3 @@ class Server:
 
 # Start server
 Server()
-

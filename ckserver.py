@@ -81,9 +81,9 @@ class Server:
             self.handleMessageType(s, json.loads(data_decrypted))
 
           # client closed connection
-          #else:
-            #s.close()
-            #self.selectList.remove(s)
+          else:
+            s.close()
+            self.selectList.remove(s)
 
     self.end()
     
@@ -155,9 +155,10 @@ class Server:
         self.sendEncrypted(selectUserResponse.encode(), self.withKey(fromUserPubKey), clientSocket)
 
     if jsonMessage['messageType'] == 'logoutMessage':
-      del self.usersOnline[jsonMessage['username']]
-      clientSocket.close()
-      self.selectList.remove(clientSocket)
+      if jsonMessage['username'] != None:
+        del self.usersOnline[jsonMessage['username']]
+        clientSocket.close()
+        self.selectList.remove(clientSocket)
 
   # ends the program
   def end(self):

@@ -139,16 +139,19 @@ class Client:
 
     # login
     elif len(str.split(line)) == 2:
-      usernameInput = str.split(line)[0]
-      passwordInput = str.split(line)[1]
-      loginMessage = (usernameInput, passwordInput)
-      self.messageQueue.append(loginMessage)
-      self.loginAuthNonce = self.genNonce()
-      loginAuthMessage = LoginAuth(self.clientPort, self.loginAuthNonce, self.genTime(), self.clientPublicKey)
-      self.sendEncrypted(loginAuthMessage.encode(), self.withKey(self.serverPublicKey), self.serverSocket)
-      self.debug("login information sent to server")
+      if self.username == None:
+        usernameInput = str.split(line)[0]
+        passwordInput = str.split(line)[1]
+        loginMessage = (usernameInput, passwordInput)
+        self.messageQueue.append(loginMessage)
+        self.loginAuthNonce = self.genNonce()
+        loginAuthMessage = LoginAuth(self.clientPort, self.loginAuthNonce, self.genTime(), self.clientPublicKey)
+        self.sendEncrypted(loginAuthMessage.encode(), self.withKey(self.serverPublicKey), self.serverSocket)
+        self.debug("login information sent to server")
 
-      self.sanitizeInput()
+        self.sanitizeInput()
+      else:
+        print "You are already logged in as " + self.username + "!"
 
     elif self.username:
       print "Invalid command. Please try again."

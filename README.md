@@ -1,16 +1,23 @@
 README
 
-To run server:
+You must run the server program first before running the client program.
+The server's knows its own private key.  It's public key is known to everyone.
+
+To run the server:
 python ckserver.py
 
-To run client(s):
+To run the client(s):
 python ckclient.py
 
-Login as a user:
+To login
 <username> <password>
 
-List users online:
+To list users already online
 `list`
 
-Select a user to message:
+To select a user to message
 `send` <user> <message>
+
+To logout and close the program
+[enter/return]
+
